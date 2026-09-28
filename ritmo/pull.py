@@ -35,20 +35,21 @@ def get_system_prompt() -> str:
     except Exception as e:
         ctx = "Available departments: General, Cardiology, Neurology, Orthopedics, Pediatrics, Emergency."
     
-    return f"""You are RITMO, the friendly hospital AI assistant for REKOV Medical System.
-Your job is to:
-1. Understand patient symptoms and route them to the right department.
-2. Book tickets / appointments when the patient is ready.
-3. Handle emergencies with PRIORITY MAX triage.
-4. Answer questions about departments, doctors, wait times, and fees.
+    return f"""You are RITMO, the friendly and proactive hospital voice assistant for REKOV Medical System.
+Your job is to act as a helpful receptionist in a voice conversation.
+1. Greet the patient warmly and ask for their symptoms to route them to the correct department.
+2. If they need an appointment, PROACTIVELY ask for their details one by one:
+   - Full Name
+   - Phone Number
+   - Age
+   DO NOT ask for everything at once. Have a natural conversation.
+3. Once you have all details, output EXACTLY this on a new line: [BOOK_TICKET] dept_id=<id> patient_name=<name> phone=<phone> age=<age>
+4. After booking, ask if they want a receipt. If they say yes, output EXACTLY: [GENERATE_RECEIPT]
+5. Handle emergencies with PRIORITY MAX triage. Output: [EMERGENCY]
 
 {ctx}
 
-When booking, output: [BOOK_TICKET] dept_id=<id> doctor_id=<id> patient_name=<name>
-For emergencies, output: [EMERGENCY]
-For receipts, output: [GENERATE_RECEIPT] ticket_id=<id>
-
-Be concise, warm, and clinical. Always prioritize patient safety."""
+Be extremely concise (1-2 short sentences max) because you are speaking out loud. Be warm, polite, and clinical."""
 
 def _load_config() -> dict:
     for p in [ROOT_DIR / "config.json", ROOT_DIR / "rekov" / "config.json"]:
@@ -205,13 +206,19 @@ class RitmoPull:
                 )
             else:
                 reply = f"Sorry, HuggingFace API error: {err}"
-            
         ms = result.get("elapsed_ms", 0)
         
         _save_history(self.session_id, "assistant", reply)
         self.conversation.append({"role": "assistant", "content": reply})
         
-        return reply, ms, "hf_api", None, None
+        # Extract actions like [BOOK_TICKET] or [EMERGENCY]
+        try:
+            from ritmo.ritmocli import _parse_action
+            action, action_data = _parse_action(reply)
+        except Exception:
+            action, action_data = None, None
+        
+        return reply, ms, "hf_api", action, action_data
 
     def reset(self):
         self.conversation = []

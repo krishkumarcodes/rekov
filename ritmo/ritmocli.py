@@ -40,6 +40,12 @@ from ritmo.spinner import Spinner
 from ritmo.booking import book_ticket_local
 from ritmo.ticketflow import book_ticket, generate_receipt, get_ticket
 
+# ── TTS (ElevenLabs / edge-tts) ──────────────────────────────────────────────
+try:
+    from language.tts_engine import speak_async as _speak
+except Exception:
+    def _speak(text, lang=None): pass  # silent fallback
+
 # ── pull.py (real-time HF API) ────────────────────────────────────────────────
 try:
     from ritmo.pull import RitmoPull, check_pull_status
@@ -186,6 +192,8 @@ def _print_ritmo(text: str):
     for i, line in enumerate(lines):
         print((prefix if i == 0 else " " * 12) + white(line))
     print()
+    # Speak the reply in background (non-blocking)
+    _speak(text)
 
 def _print_action(action: str, data: dict):
     print()
@@ -250,9 +258,12 @@ def _do_booking(action_data: dict, logger=None) -> dict:
         print()
         print(dim("  Type your next message, or say 'generate receipt' to get a receipt."))
         print()
+        # Speak booking confirmation
+        _speak(f"Ticket booked. Token {result['token']} for {result['dept_name']}.")
     else:
         print(red(f"  [FAIL] Booking failed: {result['message']}"))
         print()
+        _speak("Booking failed. Please try again.")
 
     _last_ticket = result
     if logger:
@@ -332,9 +343,12 @@ def _do_receipt(ticket_data: dict = None, logger=None) -> dict:
         except Exception:
             print(dim(f"  Open manually: {html_path}"))
         print()
+        # Speak receipt ready
+        _speak("Receipt is ready. Scan the QR code or check your browser.")
     else:
         print(red(f"  [FAIL] Receipt generation failed: {receipt.get('message', '?')}"))
         print()
+        _speak("Receipt generation failed. Please try again.")
 
     if logger:
         logger.action("GENERATE_RECEIPT", {
@@ -396,7 +410,10 @@ def _handle_common_cmd(cmd: str, history: list, mode_fn, logger=None) -> bool:
     if cmd.lower() in ("/quit", "/q", "quit", "exit"):
         if logger:
             logger.end_session("ended")
-        print(); print(dim("  Goodbye. Stay healthy!")); sys.exit(0)
+        print()
+        print(dim("  Goodbye. Stay healthy!"))
+        _speak("Goodbye. Stay healthy!")
+        sys.exit(0)
 
     if cmd.lower() == "/clear":
         if logger:

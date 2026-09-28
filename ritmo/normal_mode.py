@@ -51,6 +51,12 @@ except ImportError:
         def color(self): return "\x1b[36;1m"
     LM = _FakeLM()
 
+# -- TTS (ElevenLabs / edge-tts) ----------------------------------------------
+try:
+    from language.tts_engine import speak_async as _speak
+except Exception:
+    def _speak(text, lang=None): pass  # silent fallback
+
 # -- ANSI ---------------------------------------------------------------------
 _RESET   = "\x1b[0m"
 _TEAL    = "\x1b[38;5;43m"
@@ -118,6 +124,8 @@ def _banner():
     print(dim(f"  {T('back_hint', 'Type 0 to go back.')}"))
     print(dim("  -" * 30))
     print()
+    # Speak welcome greeting (non-blocking)
+    _speak(T("welcome_short", "Welcome to REKOV. Please fill in the patient details."))
 
 
 # -- Field input --------------------------------------------------------------
@@ -325,6 +333,7 @@ def _do_receipt_prompt(result: dict):
             print(dim(f"  Open manually: {html_path}"))
     except Exception:
         print(dim(f"  Open manually: {html_path}"))
+    _speak(T("receipt_ready", "Receipt is ready."))
     print()
 
 
@@ -405,8 +414,11 @@ def run_normal_mode():
         if not result.get("ok"):
             print(red(f"  Booking failed: {result.get('message', 'Unknown error')}"))
             print()
+            _speak("Booking failed. Please try again.")
         else:
             _print_ticket_box(result)
+            # Speak ticket confirmation
+            _speak(f"{T('ticket_booked', 'Ticket booked.')} {T('your_token', 'Token')} {result.get('token', '')}.")
             _do_receipt_prompt(result)
 
         # Register another?
@@ -420,6 +432,7 @@ def run_normal_mode():
         if again in ("n", "no", "0"):
             print()
             print(dim(f"  {T('goodbye', 'Thank you. Goodbye!')}"))
+            _speak(T("goodbye", "Thank you. Goodbye!"))
             print()
             return
 

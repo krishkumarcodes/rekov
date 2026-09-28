@@ -112,9 +112,10 @@ else:
     # Dev fallback -- proxy to Next.js dev server (npm run dev) on port 3001
     import httpx
     from starlette.requests import Request
-    from starlette.responses import StreamingResponse
+    from starlette.responses import StreamingResponse, HTMLResponse
+    from fastapi.responses import FileResponse
 
-    NEXT_DEV_URL = "http://127.0.0.1:3001"
+    NEXT_DEV_URL = "http://localhost:3001"
 
     @app.api_route("/{path:path}", methods=["GET", "HEAD", "OPTIONS"])
     async def _next_proxy(request: Request, path: str):
@@ -127,15 +128,25 @@ else:
                     method=request.method,
                     url=url,
                     headers=dict(request.headers),
-                    timeout=10,
+                    timeout=60,
                 )
+                # Remove hop-by-hop and content-encoding headers to avoid double-encoding issues
+                filtered_headers = {
+                    k: v for k, v in resp.headers.items()
+                    if k.lower() not in ("content-encoding", "content-length", "transfer-encoding", "connection")
+                }
                 return StreamingResponse(
                     content=iter([resp.content]),
                     status_code=resp.status_code,
-                    headers=dict(resp.headers),
+                    headers=filtered_headers,
                 )
-            except Exception:
-                return FileResponse(os.path.join(FRONTEND_DIR, "public", "favicon.ico"))
+            except Exception as e:
+                if "favicon" in path:
+                    return FileResponse(os.path.join(FRONTEND_DIR, "public", "favicon.ico"))
+                return HTMLResponse(
+                    content=f"<html><body style='background:#111;color:#fff;font-family:sans-serif;text-align:center;padding:50px;'><h2>Next.js UI is starting...</h2><p>Please wait a few seconds and refresh the page.</p><p style='color:#666;font-size:12px;'>Error: {str(e)}</p></body></html>",
+                    status_code=502
+                )
 
     print(f"[!]   No Next.js export found. Proxying /* to {NEXT_DEV_URL}")
     print(f"      Run 'npm run dev -- --port 3001' in rekoviu/ for the frontend.")

@@ -21,6 +21,9 @@ import socket
 import urllib.request
 import json
 
+if sys.stdout.encoding.lower() != 'utf-8' and hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 # -- REKOV credits banner -----------------------------------------------------
 try:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -155,54 +158,16 @@ def _kill_port(port: int):
         pass
 
 
-# -- Subprocess stream reader -------------------------------------------------
-_SUCCESS_PAT = {
-    "compiled successfully", "ready in", "ready started",
-    "application startup complete", "uvicorn running",
-    "started server", "[ok]", "compiled /",
-}
-_ERROR_PAT = {
-    "error:", "traceback", "exception:", "failed to compile",
-    "module not found", "typeerror", "exit code", "eaddrinuse",
-    "fatal:", "[failed]",
-}
-_SUPPRESS_PAT = {"node_modules/next/dist/", "at module.", "at wrapmodule", "webpack-runtime"}
-
-
-def _route_line(line: str, name: str):
-    lo = line.lower()
-    if any(p in lo for p in _SUPPRESS_PAT):
-        return
-    stripped = line.strip("-=* \t")
-    if not stripped:
-        return
-    if any(p in lo for p in _ERROR_PAT):
-        print(_red(f"  [ERR] [{name}]  {line}"))
-    elif any(p in lo for p in _SUCCESS_PAT):
-        print(_green(f"  [OK]  [{name}]  {line}"))
-    else:
-        print(_dim(f"  [..]  [{name}]  {line}"))
-
-
-def _read_stream(stream, name: str):
-    for raw in iter(stream.readline, b""):
-        line = raw.decode("utf-8", errors="replace").rstrip()
-        if line.strip():
-            _route_line(line, name)
-    stream.close()
-
-
 def _spawn(cmd, cwd: str, name: str):
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"]        = "1"
     env["NEXT_TELEMETRY_DISABLED"] = "1"
+    print(_dim(f"  [*] Starting {name}..."))
     proc = subprocess.Popen(
         cmd, cwd=cwd,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         env=env, stdin=subprocess.DEVNULL,
+        shell=IS_WIN
     )
-    threading.Thread(target=_read_stream, args=(proc.stdout, name), daemon=True).start()
-    threading.Thread(target=_read_stream, args=(proc.stderr, name), daemon=True).start()
     return proc
 
 
@@ -314,7 +279,7 @@ def launch_cli():
                             cfg = json.load(f)
                     hf_token = (cfg.get("hf_token") or cfg.get("HF_TOKEN")
                                 or os.environ.get("HF_TOKEN", ""))
-                    rp = RitmoPull(hf_token=hf_token)
+                    rp = RitmoPull(token=hf_token)
 
                     def _ai_reply(text):
                         reply, ms, source, action, action_data = rp.send(text)
@@ -395,11 +360,10 @@ def launch_webui():
         except Exception as e:
             print(_yellow(f"  [WRN] Could not clear .next cache: {e}"))
 
-    # Kill stale port 3000
-    if _port_in_use(3000):
-        print(_yellow("  [WRN] Port 3000 occupied - clearing..."))
-        _kill_port(3000)
-        time.sleep(1)
+    # Always clear port 3000 just in case
+    print(_yellow("  [INF] Clearing port 3000..."))
+    _kill_port(3000)
+    time.sleep(1)
 
     # Launch connection server (unified on :3000) if it exists,
     # otherwise fall back to launching frontend + backend separately
@@ -408,12 +372,29 @@ def launch_webui():
         print(_green("  [OK]  Using unified connection server (port 3000)."))
         backend_cmd = [sys.executable, conn_server]
         api_proc = _spawn(backend_cmd, CONN_DIR, "SERVER")
-        ui_proc  = None
+        
+        # If there's no static export, we must run the Next.js dev server on port 3001
+        if not os.path.isdir(os.path.join(FRONTEND_DIR, "out")):
+            print(_yellow("  [INF] Clearing port 3001..."))
+            _kill_port(3001)
+            time.sleep(1)
+            _node  = shutil.which("node") or "node"
+            _next  = os.path.join(FRONTEND_DIR, "node_modules", "next", "dist", "bin", "next")
+            _npm   = shutil.which("npm.cmd") or shutil.which("npm") or "npm.cmd"
+            frontend_cmd = (
+                [_node, _next, "dev", "-p", "3001"]
+                if os.path.isfile(_next)
+                else [_npm, "run", "dev", "--", "-p", "3001"]
+            )
+            ui_proc = _spawn(frontend_cmd, FRONTEND_DIR, "UI")
+        else:
+            ui_proc = None
     else:
         # Legacy: frontend on :3000, FastAPI on :3000/api via proxy
-        if _port_in_use(4040):
-            _kill_port(4040)
-            time.sleep(0.5)
+        _kill_port(4040)
+        time.sleep(1)
+        _kill_port(3000)
+        time.sleep(1)
 
         backend_cmd = [
             sys.executable, "-m", "uvicorn", "main:app",
@@ -440,6 +421,14 @@ def launch_webui():
     print(_dim("  GREEN = ready   RED = error   Ctrl+C to stop"))
     print()
 
+    # Automatically load the webpage in the browser
+    try:
+        import webbrowser
+        time.sleep(1.5)  # Wait briefly for Next.js to start binding
+        webbrowser.open("http://localhost:3000/kiosk")
+    except Exception:
+        pass
+
     # Keep-alive loop
     try:
         while True:
@@ -448,6 +437,8 @@ def launch_webui():
                     print(_red("  [ERR] Server crashed - restarting in 3s..."))
                     time.sleep(3)
                     if conn_server and os.path.isfile(conn_server):
+                        _kill_port(3000)
+                        time.sleep(1)
                         api_proc = _spawn(backend_cmd, CONN_DIR, "SERVER")
                     else:
                         _kill_port(4040)
@@ -457,10 +448,11 @@ def launch_webui():
             if ui_proc and ui_proc.poll() is not None:
                 code = ui_proc.returncode
                 ui_proc = None
-                if not _service_healthy("http://127.0.0.1:3000/"):
+                ui_port = 3001 if conn_server and os.path.isfile(conn_server) else 3000
+                if not _service_healthy(f"http://127.0.0.1:{ui_port}/"):
                     print(_red(f"  [ERR] [UI] Exited (code {code}) - restarting..."))
                     time.sleep(3)
-                    _kill_port(3000)
+                    _kill_port(ui_port)
                     time.sleep(1)
                     ui_proc = _spawn(frontend_cmd, FRONTEND_DIR, "UI")
 

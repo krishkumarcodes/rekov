@@ -33,6 +33,9 @@ STRINGS = {
         "stored_cloud":   "Stored in Supabase - accessible from any device.",
         "stored_local":   "Saved locally only (Supabase unreachable).",
         "emergency":      "Emergency! Routing to Emergency Department immediately.",
+        "welcome_short":  "Welcome to REKOV. Please fill in the patient details.",
+        "ticket_booked":  "Ticket booked.",
+        "your_token":     "Token",
     },
     "hi": {
         "welcome":        "REKOV अस्पताल प्रणाली में आपका स्वागत है",
