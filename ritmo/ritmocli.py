@@ -158,18 +158,25 @@ def _get_hf_token(cfg: dict) -> str:
 def _banner(mode_label: str, mode_color):
     os.system("cls" if sys.platform == "win32" else "clear")
     _print_rekov_credits(compact=True, show_contributors=False)
+    # Language badge
+    try:
+        from language.manager import LM as _bLM
+        _lang_badge = f"{_bLM.color}{_bLM.flag}  {_bLM.name}  ({_bLM.native}){C.RESET}"
+    except Exception:
+        _lang_badge = "[EN]  English"
     print()
-    print(teal("  ╔══════════════════════════════════════════════════════╗"))
-    print(teal("  ║") + white("   RITMO  —  Hospital AI Assistant  (CLI)             ") + teal("║"))
-    print(teal("  ╚══════════════════════════════════════════════════════╝"))
+    print(teal("  +-- RITMO  --  Hospital AI Assistant  (CLI) -------------------+"))
+    print(teal("  |  ") + white("   Powered by HuggingFace Qwen / ONNX Offline") + teal(" " * 20 + "|"))
+    print(teal("  " + "+" + "-" * 64 + "+"))
     print()
-    print(f"  Mode : {mode_color(mode_label)}")
-    print(dim("  /quit  /clear  /history  /receipt  /support  /help"))
+    print(f"  Mode     : {mode_color(mode_label)}")
+    print(f"  Language : {_lang_badge}")
+    print(dim("  /quit  /clear  /history  /lang  /receipt  /support  /help"))
     print()
     if _HAS_SUPPORT:
         _support.print_inline_status()
     print()
-    print(dim("  " + "─" * 53))
+    print(dim("  " + "-" * 53))
     print()
 
 def _print_ritmo(text: str):
@@ -469,6 +476,20 @@ def _handle_common_cmd(cmd: str, history: list, mode_fn, logger=None) -> bool:
         _handle_scan_cmd(cmd)
         return True
 
+    if cmd.lower() in ("/lang", "/language"):
+        try:
+            from language.picker  import switch_language_prompt
+            from language.manager import LM as _cLM, set_lang
+            new_key = switch_language_prompt(current=_cLM.active)
+            set_lang(new_key)
+            from language.manager import LM as _cLM2
+            print()
+            print(green(f"  Language set to: {_cLM2.flag}  {_cLM2.name}  ({_cLM2.native})"))
+            print()
+        except Exception as _le:
+            print(yellow(f"  [LANG] Could not switch language: {_le}"))
+        return True
+
     return False
 
 
@@ -542,16 +563,27 @@ def run_hf_mode():
 
     print()
     sb_ok, sb_detail = _check_supabase_alive()
-    sb_icon = green("☁ CLOUD SYNC ON") if sb_ok else red("⚠ CLOUD SYNC OFF")
-    print(f"  Session : {cyan(session_id[:8])}")
-    print(f"  Storage : {sb_icon}  {dim('(' + sb_detail + ')')}")
+    sb_icon = green("CLOUD SYNC ON") if sb_ok else red("CLOUD SYNC OFF")
+    print(f"  Session  : {cyan(session_id[:8])}")
+    print(f"  Storage  : {sb_icon}  {dim('(' + sb_detail + ')')}")
+
+    # Language info
+    try:
+        from language.manager import LM as _hfLM
+        _hf_lang_badge = f"{_hfLM.color}{_hfLM.flag}  {_hfLM.name}  ({_hfLM.native}){C.RESET}"
+        _hf_lang_name  = _hfLM.name
+    except Exception:
+        _hf_lang_badge = "[EN]  English"
+        _hf_lang_name  = "English"
+
+    print(f"  Language : {_hf_lang_badge}")
     if sb_ok:
         print(dim("  Chat history will be saved to Supabase [ritmohis] for 7 days."))
     else:
-        print(dim("  Chat history saved locally only (base/logs/ritmo_sessions.jsonl)."))
+        print(dim("  Chat history saved locally (base/logs/ritmo_sessions.jsonl)."))
     print()
-    print(teal("  RITMO ▸  ") + white("Hello! I am RITMO, your hospital assistant."))
-    print("           " + white("What health issue can I help you with today?"))
+    print(teal("  RITMO -> ") + white(f"Hello! I am RITMO, your hospital assistant."))
+    print("          " + white(f"I will respond in {_hf_lang_name}. How can I help you today?"))
     print()
 
     while True:
@@ -561,11 +593,20 @@ def run_hf_mode():
         if _handle_common_cmd(user_input, rp.conversation, run_hf_mode, logger):
             continue
 
+        # Inject language context into user message so AI responds in right lang
+        try:
+            from language.manager import LM as _hfLM2
+            _hf_lang2 = _hfLM2.name
+        except Exception:
+            _hf_lang2 = "English"
+        lang_ctx = f"[Respond in {_hf_lang2}. Understand input in any language.] "
+        user_input_with_lang = lang_ctx + user_input
+
         if logger:
             logger.message("user", user_input)
 
         with Spinner("Sending to HuggingFace..."):
-            reply, ms, source, action, action_data = rp.send(user_input)
+            reply, ms, source, action, action_data = rp.send(user_input_with_lang)
 
         # Re-parse action just in case it wasn't caught
         if not action:

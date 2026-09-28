@@ -5,16 +5,20 @@ RITMO Voice Mode — Always-listening speech I/O loop.
 Completely terminal-based, no ports needed.
 
 STT options (pick at runtime):
-  A — Google Web Speech (free, online, no key)
-  B — Vosk              (100% offline, ~40MB model)
+  A — Google Web Speech (free, online, no key) — all 7 languages
+  B — Vosk              (100% offline, ~40MB model) — English only by default
   C — Manual (keyboard) — type instead of speaking
 
 TTS:
-  edge-tts → async → saves temp MP3 → pygame plays it
+  ElevenLabs (eleven_multilingual_v2) if elevenlabs_key in config.json
+  else edge-tts (free Microsoft neural voices) — all 7 languages
+
+Language: set via language/manager.py LM singleton (persists session)
+  /lang command in voice loop to switch language mid-session
 
 Works standalone:
   python ritmo/voice.py
-or via interface.py mode 3 → sub-mode 3.
+or via interface.py -> 1 -> 3.
 """
 
 import os
@@ -101,46 +105,49 @@ def _ensure_vosk():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  TTS — edge-tts + pygame playback
+#  TTS — unified multilingual engine (ElevenLabs -> edge-tts -> silent)
 # ─────────────────────────────────────────────────────────────────────────────
 
-VOICE_NAME = "en-IN-NeerjaNeural"   # Indian English female
+try:
+    from language.tts_engine import speak as _lang_speak, TTS_ENGINE
+    from language.manager    import LM as _LM
+    _LANG_VOICE = True
+except ImportError:
+    _LANG_VOICE  = False
+    TTS_ENGINE   = "edge-tts"
+    _LM          = None
 
 
-async def _speak_async(text: str):
-    _ensure_edge_tts()
-    _ensure_pygame()
-    import edge_tts
-    import pygame
-
-    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-        tmp_path = f.name
-
-    try:
-        communicate = edge_tts.Communicate(text, VOICE_NAME)
-        await communicate.save(tmp_path)
-
-        pygame.mixer.init()
-        pygame.mixer.music.load(tmp_path)
-        pygame.mixer.music.play()
-        while pygame.mixer.music.get_busy():
-            pygame.time.wait(80)
-        pygame.mixer.music.unload()
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
-
-
-def speak(text: str):
-    """Speak `text` aloud using edge-tts. Blocks until playback finishes."""
+def speak(text: str, lang: str | None = None):
+    """Speak text in the active session language.
+    Routes to ElevenLabs (if key set) or edge-tts fallback.
+    """
     if not text or not text.strip():
         return
-    # Truncate very long replies before speaking (keep first 2 sentences)
     sentences = text.replace("—", ".").split(".")
     short = ". ".join(s.strip() for s in sentences[:2] if s.strip())
-    asyncio.run(_speak_async(short or text[:160]))
+    if _LANG_VOICE:
+        _lang_speak(short or text[:200], lang=lang)
+    else:
+        # Legacy edge-tts fallback
+        _ensure_edge_tts()
+        _ensure_pygame()
+        import edge_tts, pygame
+        async def _run():
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+                tmp = f.name
+            try:
+                await edge_tts.Communicate(short or text[:200], "en-IN-NeerjaNeural").save(tmp)
+                pygame.mixer.init()
+                pygame.mixer.music.load(tmp)
+                pygame.mixer.music.play()
+                while pygame.mixer.music.get_busy():
+                    pygame.time.wait(80)
+                pygame.mixer.music.unload()
+            finally:
+                try: os.unlink(tmp)
+                except Exception: pass
+        asyncio.run(_run())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -148,9 +155,11 @@ def speak(text: str):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class _GoogleSTT:
-    """Online STT via Google Web Speech API (free, no key)."""
+    """Online STT via Google Web Speech API (free, no key).
+    Supports all 7 languages via language code passed to recognize_google.
+    """
     name = "Google Web Speech"
-    label = "A — Google Web Speech  (online, free, no API key)"
+    label = "A — Google Web Speech  (online, free, 7 languages)"
 
     def __init__(self):
         _ensure_speech_recognition()
@@ -158,14 +167,23 @@ class _GoogleSTT:
         self._sr = sr
         self._r  = sr.Recognizer()
 
+    def _lang_code(self) -> str:
+        """Return BCP-47 lang code from active session language."""
+        try:
+            from language.manager import LM
+            return LM.stt_code()
+        except Exception:
+            return "en-IN"
+
     def listen(self, timeout=6, phrase_limit=15) -> str:
-        """Record from mic, return recognised text. Raises sr exceptions on failure."""
-        sr = self._sr
+        """Record from mic, return recognised text in active language."""
+        sr   = self._sr
+        lang = self._lang_code()
         with sr.Microphone() as src:
             self._r.adjust_for_ambient_noise(src, duration=0.3)
-            print(dim("  🎤  Speak now..."))
+            print(dim(f"  [mic] {lang}  — listening..."))
             audio = self._r.listen(src, timeout=timeout, phrase_time_limit=phrase_limit)
-        text = self._r.recognize_google(audio)
+        text = self._r.recognize_google(audio, language=lang)
         return text
 
 
@@ -214,7 +232,7 @@ class _VoskSTT:
         CHUNK = 4096
         rec = vosk.KaldiRecognizer(self._model, RATE)
 
-        print(dim("  🎤  Speak now... (Vosk)"))
+        print(dim("  [mic]  Speak now... (Vosk offline)"))
         frames = []
         silence_count = 0
         started = False
@@ -268,22 +286,42 @@ _STT_OPTIONS = {
 
 def pick_stt_engine() -> object:
     """Let user pick STT engine at startup."""
+    try:
+        from language.manager import LM as _lm
+        lang_badge = f"{_lm.color}{_lm.flag}\x1b[0m"
+    except Exception:
+        lang_badge = "[EN]"
+
     print()
-    print(teal("  ╔══════════════════════════════════════════════════════╗"))
-    print(teal("  ║") + white("   RITMO Voice — Select STT Engine                   ") + teal("║"))
-    print(teal("  ╚══════════════════════════════════════════════════════╝"))
+    print(teal("  +-- RITMO Voice -- Select STT Engine ---------------------------+"))
     print()
     for key, cls in _STT_OPTIONS.items():
         print(f"    {cyan(key)}  {cls.label}")
+    print()
+    print(dim(f"  Active language: {lang_badge}  (type /lang to change)"))
     print()
     while True:
         try:
             choice = input(white("  Choose [A/B/C]: ")).strip().upper() or "A"
         except (KeyboardInterrupt, EOFError):
             print(); sys.exit(0)
+        if choice == "/LANG":
+            try:
+                from language.picker import switch_language_prompt
+                from language.manager import LM as _lm, set_lang
+                new_key = switch_language_prompt(current=_lm.active)
+                set_lang(new_key)
+            except Exception:
+                pass
+            continue
         if choice in _STT_OPTIONS:
             cls = _STT_OPTIONS[choice]
             print(green(f"  [OK] STT: {cls.name}"))
+            try:
+                from language.manager import LM as _lm
+                print(green(f"  [OK] Language: {_lm.name} ({_lm.stt_code()})"))
+            except Exception:
+                pass
             return cls()
         print(red(f"  Invalid '{choice}'. Enter A, B, or C."))
 
@@ -328,26 +366,46 @@ def run_voice_loop(ai_reply_fn, stt_engine=None):
         stt_engine = pick_stt_engine()
 
     os.system("cls" if sys.platform == "win32" else "clear")
+
+    # Get current language info
+    try:
+        from language.manager import LM as _vlm, T as _vT
+        _lang_badge = f"{_vlm.color}{_vlm.flag}\x1b[0m"
+        _lang_name  = _vlm.name
+        _speak_lang = _vlm.active
+    except Exception:
+        _lang_badge  = "[EN]"
+        _lang_name   = "English"
+        _speak_lang  = "en"
+        def _vT(k, fb=""): return fb or k
+
     print()
-    print(teal("  ╔══════════════════════════════════════════════════════╗"))
-    print(teal("  ║") + white("   RITMO  —  Voice Mode  🎤                          ") + teal("║"))
-    print(teal("  ╚══════════════════════════════════════════════════════╝"))
+    print(teal("  +-- RITMO Voice Mode --------------------------------------------+"))
+    print(teal("  |  ") + white("Always listening. Speak in your language.") + teal(" " * 18 + "|"))
+    print(teal("  " + "+" + "-" * 64 + "+"))
     print()
-    print(dim("  Say 'quit' or 'goodbye' to exit."))
-    print(dim("  Commands also accepted via keyboard (/receipt /quit)."))
-    print(dim("  ─" * 28))
+    print(f"  Language : {_lang_badge}  {_lang_name}")
+    print(dim(f"  TTS      : {TTS_ENGINE}"))
+    print(dim("  Commands : /lang (switch language)  /receipt  /quit"))
+    print(dim("  -" * 34))
     print()
 
-    greeting = "RITMO Voice Mode is active. How can I help you today?"
-    print(f"  RITMO ▸  {white(greeting)}")
-    speak(greeting)
+    greeting = _vT("welcome", "REKOV Voice Mode active. How can I help you today?")
+    print(f"  RITMO  ->  {white(greeting)}")
+    speak(greeting, lang=_speak_lang)
 
     _last_ticket = {}
 
     while True:
-        # ── Listen ────────────────────────────────────────────────────────────
+        # -- Listen -----------------------------------------------------------
+        try:
+            from language.manager import LM as _vlm
+            _lang_badge = f"{_vlm.color}{_vlm.flag}\x1b[0m"
+        except Exception:
+            _lang_badge = "[EN]"
+
         print()
-        print(dim(f"  [{stt_engine.name}]  🎤  Listening..."))
+        print(dim(f"  [{stt_engine.name}]  {_lang_badge}  listening..."))
         try:
             user_text = stt_engine.listen(timeout=7)
         except KeyboardInterrupt:
@@ -359,39 +417,70 @@ def run_voice_loop(ai_reply_fn, stt_engine=None):
         if not user_text.strip():
             continue
 
-        print(f"  You   ▸  {cyan(user_text)}")
+        print(f"  You   ->  {cyan(user_text)}")
 
-        # Quit keywords
-        if user_text.lower().strip() in ("quit", "exit", "bye", "goodbye", "stop"):
-            farewell = "Goodbye! Stay healthy."
-            print(f"  RITMO ▸  {white(farewell)}")
-            speak(farewell)
+        # Quit keywords (multilingual)
+        _quit_words = {"quit", "exit", "bye", "goodbye", "stop",
+                       "बंद", "बाहर", "विदाई", "বিদায়", "থামো", "bye"}
+        if user_text.lower().strip() in _quit_words:
+            try:
+                from language.manager import LM as _vlm, T as _vT
+                farewell = _vT("goodbye", "Goodbye! Stay healthy.")
+                _sp_lang = _vlm.active
+            except Exception:
+                farewell = "Goodbye! Stay healthy."
+                _sp_lang = "en"
+            print(f"  RITMO ->  {white(farewell)}")
+            speak(farewell, lang=_sp_lang)
             break
+
+        # /lang command — switch language mid-session
+        if user_text.strip().lower() == "/lang":
+            try:
+                from language.picker  import switch_language_prompt
+                from language.manager import LM as _vlm, set_lang
+                new_key = switch_language_prompt(current=_vlm.active)
+                set_lang(new_key)
+                from language.manager import LM as _vlm2, T as _vT2
+                speak(_vT2("welcome", "Language switched."), lang=_vlm2.active)
+            except Exception as _le:
+                print(red(f"  [LANG] Could not switch: {_le}"))
+            continue
 
         # /receipt keyboard shortcut
         if user_text.strip().lower() == "/receipt" and _last_ticket:
-            from ritmo.ritmocli import _do_receipt
-            _do_receipt(_last_ticket)
+            try:
+                from ritmo.ritmocli import _do_receipt
+                _do_receipt(_last_ticket)
+            except Exception:
+                pass
             continue
 
-        # ── AI reply ──────────────────────────────────────────────────────────
-        print(dim("  RITMO ▸  thinking..."))
+        # -- AI reply ---------------------------------------------------------
+        try:
+            from language.manager import LM as _vlm, T as _vT
+            _thinking = _vT("thinking", "Thinking...")
+            _sp_lang  = _vlm.active
+        except Exception:
+            _thinking = "Thinking..."
+            _sp_lang  = "en"
+
+        print(dim(f"  RITMO ->  {_thinking}"))
         try:
             reply, action, action_data = ai_reply_fn(user_text)
         except Exception as e:
-            err = f"Sorry, I encountered an error: {str(e)[:60]}"
-            print(f"  RITMO ▸  {red(err)}")
-            speak(err)
+            err = f"Sorry, error: {str(e)[:60]}"
+            print(f"  RITMO ->  {red(err)}")
+            speak(err, lang=_sp_lang)
             continue
 
-        # Strip action tags from spoken reply
         import re
         clean_reply = re.sub(r"\[(BOOK_TICKET|GENERATE_RECEIPT|EMERGENCY)\][^\n]*", "", reply).strip()
         if not clean_reply:
             clean_reply = reply[:200]
 
-        print(f"  RITMO ▸  {white(clean_reply)}")
-        speak(clean_reply)
+        print(f"  RITMO ->  {white(clean_reply)}")
+        speak(clean_reply, lang=_sp_lang)
 
         # ── Handle actions via voice ──────────────────────────────────────────
         if action == "BOOK_TICKET":
@@ -445,14 +534,12 @@ def run_voice_loop(ai_reply_fn, stt_engine=None):
                             # Print ASCII QR
                             lines = receipt.get("ascii_qr_lines", [])
                             if lines:
-                                import io
-                                utf8_out = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+                                # plain print to avoid TextIOWrapper closed-file crash
                                 w = len(lines[0]) + 4
-                                utf8_out.write(f"  \u250c{chr(0x2500)*w}\u2510\n")
+                                print("  +" + "-" * w + "+")
                                 for ln in lines:
-                                    utf8_out.write(f"  \u2502  {ln}  \u2502\n")
-                                utf8_out.write(f"  \u2514{chr(0x2500)*w}\u2518\n")
-                                utf8_out.flush()
+                                    print("  |  " + ln + "  |")
+                                print("  +" + "-" * w + "+")
                 except Exception:
                     pass
             else:

@@ -1,10 +1,13 @@
 {
   "supabase": {
-    "url": "https://ylzpjtzeetnvypvikiqa.supabase.co",
-    "key": "sb_publishable_mvS1x5C11_f5uIC9mpGukA_7vsP1jDQ"
+    "url": "https://YOUR_PROJECT.supabase.co",
+    "key": "YOUR_SUPABASE_ANON_KEY"
   },
-  "SUPABASE_URL": "https://ylzpjtzeetnvypvikiqa.supabase.co",
-  "SUPABASE_KEY": "sb_publishable_mvS1x5C11_f5uIC9mpGukA_7vsP1jDQ",
+  "SUPABASE_URL": "https://YOUR_PROJECT.supabase.co",
+  "SUPABASE_KEY": "YOUR_SUPABASE_ANON_KEY",
   "hf_token": "YOUR_HUGGING_FACE_TOKEN_HERE",
-  "HF_TOKEN": "YOUR_HUGGING_FACE_TOKEN_HERE"
+  "HF_TOKEN": "YOUR_HUGGING_FACE_TOKEN_HERE",
+  "elevenlabs_key": "YOUR_ELEVENLABS_API_KEY_HERE",
+  "default_language": "en"
 }
+

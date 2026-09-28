@@ -217,9 +217,17 @@ def _print_cli_submenu():
         print_rekov_credits(compact=True, show_contributors=False)
     except Exception:
         pass
+
+    # Active language badge
+    try:
+        from language.manager import LM
+        lang_badge = f"{LM.color}{LM.flag}  {LM.name}  ({LM.native}){_C.RESET}"
+    except Exception:
+        lang_badge = "[EN]  English"
+
     print()
-    print("  " + _C.TEAL + "  REKOV CLI  —  Select Mode" + _C.RESET)
-    print("  " + _dim("-" * 52))
+    print("  " + _C.TEAL + "  REKOV CLI  —  Select Mode" + _C.RESET + f"  {_dim(lang_badge)}")
+    print("  " + _dim("-" * 60))
     print()
     print(f"  {_green('  1  ')} ->  {_white('Normal Mode')}    {_dim('guided form — name, phone, dept, receipt')}")
     print()
@@ -229,7 +237,7 @@ def _print_cli_submenu():
     print()
     print(f"  {_dim('  0  ')} ->  {_white('Back')}           {_dim('return to main menu')}")
     print()
-    print("  " + _dim("-" * 52))
+    print("  " + _dim("-" * 60))
     print()
 
 
@@ -246,7 +254,17 @@ def _pick_cli_mode() -> str:
 
 
 def launch_cli():
-    """CLI mode — Normal booking / RITMO AI / Voice. No ports. Pure terminal."""
+    """CLI mode — show language picker, then Normal booking / RITMO AI / Voice. No ports."""
+    # -- Language picker (animated, shown once per CLI session) ---------------
+    try:
+        from language.picker  import show_language_picker
+        from language.manager import LM, set_lang
+        lang_key = show_language_picker()
+        set_lang(lang_key)
+        import time; time.sleep(0.4)
+    except Exception as _le:
+        print(_yellow(f"  [LANG] Picker unavailable ({_le}) — defaulting to English."))
+
     while True:
         _print_cli_submenu()
         mode = _pick_cli_mode()

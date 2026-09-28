@@ -4,6 +4,9 @@ ritmo/normal_mode.py
 RITMO Normal Mode -- Guided form-style patient registration.
 No AI. No internet required. Works fully offline.
 
+Multilingual: All prompts use T() from language.manager for
+Hindi, Bengali, Malayalam, Punjabi, Telugu, Tamil, and English.
+
 Flow:
   1. Fill in patient details (name, phone, age, department)
   2. Confirm -> book ticket (Supabase or local SQLite fallback)
@@ -24,7 +27,31 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
-# -- ANSI --
+# Ensure UTF-8 output on Windows (for native scripts)
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+# -- Language layer -----------------------------------------------------------
+try:
+    from language.manager import LM, T, T_dept, LANGUAGES
+    _LANG_OK = True
+except ImportError:
+    _LANG_OK = False
+    def T(k, fb=""): return fb or k
+    def T_dept(k): return k
+    class _FakeLM:
+        active = "en"
+        def colored(self, t): return t
+        @property
+        def flag(self): return "[EN]"
+        @property
+        def color(self): return "\x1b[36;1m"
+    LM = _FakeLM()
+
+# -- ANSI ---------------------------------------------------------------------
 _RESET   = "\x1b[0m"
 _TEAL    = "\x1b[38;5;43m"
 _CYAN    = "\x1b[36;1m"
@@ -47,7 +74,7 @@ def dim(t):     return _c(_DIM,     t)
 def blue(t):    return _c(_BLUE,    t)
 def magenta(t): return _c(_MAGENTA, t)
 
-# -- Departments --
+# -- Departments (ID -> (dept_id, en_name)) -----------------------------------
 DEPARTMENTS = {
     "1":  ("dep_gen",   "General Medicine"),
     "2":  ("dep_card",  "Cardiology"),
@@ -68,6 +95,11 @@ def _clear():
     os.system("cls" if sys.platform == "win32" else "clear")
 
 
+def _lang_badge() -> str:
+    """Show current language badge in its color."""
+    return f"  {LM.color}{LM.flag}{_RESET}"
+
+
 def _banner():
     _clear()
     try:
@@ -76,24 +108,24 @@ def _banner():
     except Exception:
         pass
     print()
+    lang_line = _lang_badge() + dim(f"  {LM.active.upper()} / {T('your_name', 'Normal Mode')}")
     print(teal("  +------------------------------------------------------------+"))
     print(teal("  |") + white("   RITMO  --  Normal Registration Mode                   ") + teal("|"))
     print(teal("  +------------------------------------------------------------+"))
     print()
-    print(dim("  Fill in patient details. Press Enter to skip optional fields."))
-    print(dim("  Type '0' at any prompt to go back / cancel registration."))
-    print(dim("  -" * 28))
+    print(lang_line)
+    print()
+    print(dim(f"  {T('back_hint', 'Type 0 to go back.')}"))
+    print(dim("  -" * 30))
     print()
 
 
-def _field(label: str, step: int, total: int, default: str = "", required=False) -> str | None:
-    """
-    Prompt for a single field.
-    Returns None if user types '0' (back/cancel).
-    Returns default if user presses Enter on optional field.
-    """
+# -- Field input --------------------------------------------------------------
+def _field(
+    label: str, step: int, total: int, default: str = "", required=False
+) -> str | None:
     tag = f"[{step}/{total}]"
-    prompt = f"  {dim(tag)} {cyan(label)}"
+    prompt = f"  {dim(tag)} {LM.color}{label}{_RESET}"
     if default:
         prompt += dim(f"  (default: {default})")
     prompt += "\n  > "
@@ -107,27 +139,34 @@ def _field(label: str, step: int, total: int, default: str = "", required=False)
         if val == "0" or val.lower() in ("skip", "cancel", "exit", "quit", "back"):
             return None
 
+        # Auto-detect language from typed input and switch if different
+        if _LANG_OK and val:
+            from language.manager import detect_lang
+            detected = detect_lang(val)
+            if detected and detected != LM.active and detected in LANGUAGES:
+                print(dim(f"  [Language detected: {LANGUAGES[detected]['name']}. Switching...]"))
+                LM.set(detected)
+
         if val:
             return val
         if default:
             return default
         if not required:
             return ""
-        print(red(f"  '{label}' is required. Please enter a value."))
+        print(red(f"  '{label}' is required."))
 
 
+# -- Department picker --------------------------------------------------------
 def _dept_picker(step: int, total: int) -> tuple | None:
-    """
-    Show department menu, return (dept_id, dept_name) or None if user goes back.
-    """
     print()
-    print(f"  {dim(f'[{step}/{total}]')} {cyan('Department')}:")
+    print(f"  {dim(f'[{step}/{total}]')} {LM.color}{T('your_dept', 'Department')}{_RESET}:")
     print()
-    for k, (did, dname) in DEPARTMENTS.items():
-        marker = " [EMERGENCY]" if did == "dep_emg" else ""
-        print(f"    {cyan(k):>6}  {dname}{marker}")
+    for k, (did, en_name) in DEPARTMENTS.items():
+        local_name = T_dept(did) or en_name
+        marker = "  [!]" if did == "dep_emg" else ""
+        print(f"    {LM.color}{k:>3}{_RESET}  {local_name}{red(marker)}")
     print()
-    print(dim("  Enter number (1-12), press Enter for General Medicine, or '0' to go back."))
+    print(dim(f"  Enter 1-12, press Enter for General Medicine, or 0 to go back."))
     print()
 
     while True:
@@ -136,31 +175,34 @@ def _dept_picker(step: int, total: int) -> tuple | None:
         except (KeyboardInterrupt, EOFError):
             return None
 
-        if val == "0" or val.lower() in ("back", "skip", "cancel", "exit", "quit"):
+        if val == "0" or val.lower() in ("back", "skip", "cancel"):
             return None
         if val == "":
             return DEPARTMENTS["1"]
         if val in DEPARTMENTS:
-            return DEPARTMENTS[val]
-        print(red(f"  Invalid choice '{val}'. Enter 1-12 or 0 to go back."))
+            did, en_name = DEPARTMENTS[val]
+            local_name   = T_dept(did) or en_name
+            return did, local_name
+        print(red(f"  Invalid '{val}'. Enter 1-12 or 0 to go back."))
 
 
+# -- Confirm box --------------------------------------------------------------
 def _confirm_box(name, phone, age, dept_name, notes) -> bool:
-    """Print a review box and ask for confirmation."""
     print()
-    print(magenta("  +-- PATIENT DETAILS -------------------------------------------+"))
-    print(magenta(f"  |  Name       : {(name or '--'):<43}|"))
-    print(magenta(f"  |  Phone      : {(phone or '--'):<43}|"))
-    print(magenta(f"  |  Age        : {(age or '--'):<43}|"))
-    print(magenta(f"  |  Department : {dept_name:<43}|"))
+    print(magenta("  +-- " + T("your_name", "PATIENT DETAILS") + " " + "-" * 44 + "+"))
+    print(magenta(f"  |  {T('your_name','Name'):<12}: {(name or '--'):<43}|"))
+    print(magenta(f"  |  {T('your_phone','Phone'):<12}: {(phone or '--'):<43}|"))
+    print(magenta(f"  |  {T('your_age','Age'):<12}: {(age or '--'):<43}|"))
+    print(magenta(f"  |  {T('your_dept','Dept'):<12}: {dept_name:<43}|"))
     if notes:
-        print(magenta(f"  |  Notes      : {notes[:43]:<43}|"))
-    print(magenta("  +--------------------------------------------------------------+"))
+        print(magenta(f"  |  Notes       : {notes[:43]:<43}|"))
+    print(magenta("  +" + "-" * 62 + "+"))
     print()
 
+    prompt_str = white(f"  {T('confirm', 'Confirm and book?')}  {T('yes_no_skip', '[Y/N/0]')} : ")
     while True:
         try:
-            choice = input(white("  Confirm and book?  [Y]es  [N]o/edit  [0] Cancel : ")).strip().lower()
+            choice = input(prompt_str).strip().lower()
         except (KeyboardInterrupt, EOFError):
             return False
         if choice in ("y", "yes", ""):
@@ -169,11 +211,11 @@ def _confirm_box(name, phone, age, dept_name, notes) -> bool:
             return False
         if choice in ("0", "s", "skip", "cancel"):
             return False
-        print(red("  Enter Y, N, or 0 to cancel."))
+        print(red(f"  {T('invalid', 'Invalid input.')}"))
 
 
+# -- Ticket box ---------------------------------------------------------------
 def _print_ticket_box(result: dict):
-    """Print the booked ticket confirmation box."""
     tid    = result.get("ticket_id", "?")
     token  = result.get("token", "?")
     dept   = result.get("dept_name", "?")
@@ -188,44 +230,36 @@ def _print_ticket_box(result: dict):
     print(green(f"  |  Patient     : {pname:<45}|"))
     print(green(f"  |  Department  : {dept:<45}|"))
     print(green(f"  |  Fee         : Rs.{fee:<43.2f}|"))
-    print(green("  +----------------------------------------------------------------+"))
+    print(green("  +" + "-" * 64 + "+"))
     print()
 
     if synced:
-        print(green("  [OK] Stored in Supabase -- accessible from any device."))
+        print(green(f"  [OK] {T('stored_cloud', 'Stored in Supabase - accessible from any device.')}"))
     else:
-        print(yellow("  [!]  Stored locally only (Supabase unreachable)"))
-        print(dim("  Run Supabase migration SQL to enable cloud sync."))
+        print(yellow(f"  [!]  {T('stored_local', 'Saved locally only (Supabase unreachable).')}"))
+        print(dim("  Run migration SQL to enable cloud sync."))
     print()
 
 
+# -- ASCII QR -----------------------------------------------------------------
 def _print_ascii_qr(lines: list):
-    """Print QR code as ASCII art to stdout safely."""
     if not lines:
         return
-    try:
-        # Use a fresh print call per line — avoids TextIOWrapper closed-file issues
-        w = len(lines[0]) + 4
-        print("  +" + "-" * w + "+")
-        for ln in lines:
-            print("  |  " + ln + "  |")
-        print("  +" + "-" * w + "+")
-    except Exception:
-        for ln in lines:
-            try:
-                print("  | " + ln.encode("ascii", errors="replace").decode() + " |")
-            except Exception:
-                pass
+    w = len(lines[0]) + 4
+    print("  +" + "-" * w + "+")
+    for ln in lines:
+        print("  |  " + ln + "  |")
+    print("  +" + "-" * w + "+")
 
 
+# -- Receipt prompt -----------------------------------------------------------
 def _do_receipt_prompt(result: dict):
-    """Ask if user wants a receipt and generate it."""
     print()
     try:
-        choice = input(white("  Generate receipt + QR code?  [Y/n]: ")).strip().lower()
+        q = T("receipt_q", "Generate receipt + QR code?")
+        choice = input(white(f"  {q}  [Y/n]: ")).strip().lower()
     except (KeyboardInterrupt, EOFError):
         return
-
     if choice in ("n", "no"):
         return
 
@@ -236,7 +270,7 @@ def _do_receipt_prompt(result: dict):
         from ritmo.ticketflow import generate_receipt
         receipt = generate_receipt(result)
     except Exception as e:
-        print(red(f"  Receipt generation failed: {e}"))
+        print(red(f"  Receipt failed: {e}"))
         return
 
     if not receipt.get("ok"):
@@ -251,14 +285,14 @@ def _do_receipt_prompt(result: dict):
     print(magenta(f"  |  Ticket  : {result.get('ticket_id', '?'):<49}|"))
     print(magenta(f"  |  Token   : {result.get('token', '?'):<49}|"))
     print(magenta(f"  |  Patient : {result.get('patient', '?'):<49}|"))
-    print(magenta("  +-------------------------------------------------------------+"))
+    print(magenta("  +" + "-" * 62 + "+"))
     print()
 
     if store_url:
-        print(green("  [OK] Uploaded to Supabase Storage"))
+        print(green(f"  [OK] {T('stored_cloud', 'Uploaded to Supabase Storage')}"))
         print(f"  {dim('Receipt URL  :')} {cyan(store_url)}")
     else:
-        print(yellow("  [!]  Saved locally only (Supabase Storage unreachable)"))
+        print(yellow(f"  [!]  {T('stored_local', 'Saved locally only (Supabase unreachable)')}"))
         print(f"  {dim('Local file   :')} {cyan(html_path)}")
     print()
 
@@ -294,13 +328,13 @@ def _do_receipt_prompt(result: dict):
     print()
 
 
-# -----------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 #  MAIN NORMAL MODE LOOP
-# -----------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 
 def run_normal_mode():
     """
-    Run the full guided patient registration loop.
+    Run the full guided patient registration loop (multilingual).
     Returns when user chooses to stop or types 0 to go back.
     """
     from ritmo.ticketflow import book_ticket
@@ -309,51 +343,51 @@ def run_normal_mode():
         _banner()
 
         # Step 1 -- Patient name
-        name = _field("Patient Name", 1, 5, required=True)
+        name = _field(T("your_name", "Patient Name"), 1, 5, required=True)
         if name is None:
-            print(yellow("\n  Registration cancelled."))
+            print(yellow(f"\n  {T('cancelled', 'Registration cancelled.')}"))
             return
 
         # Step 2 -- Phone
         print()
-        phone = _field("Phone Number (optional)", 2, 5, default="")
+        phone = _field(T("your_phone", "Phone Number (optional)"), 2, 5, default="")
         if phone is None:
-            print(yellow("\n  Registration cancelled."))
+            print(yellow(f"\n  {T('cancelled', 'Registration cancelled.')}"))
             return
 
         # Step 3 -- Age
         print()
-        age = _field("Age (optional)", 3, 5, default="")
+        age = _field(T("your_age", "Age (optional)"), 3, 5, default="")
         if age is None:
-            print(yellow("\n  Registration cancelled."))
+            print(yellow(f"\n  {T('cancelled', 'Registration cancelled.')}"))
             return
 
         # Step 4 -- Department
         dept_result = _dept_picker(4, 5)
         if dept_result is None:
-            print(yellow("\n  Registration cancelled."))
+            print(yellow(f"\n  {T('cancelled', 'Registration cancelled.')}"))
             return
         dept_id, dept_name = dept_result
 
         # Step 5 -- Notes
         print()
-        notes = _field("Notes / Chief Complaint (optional)", 5, 5, default="")
+        notes = _field(T("your_notes", "Notes / Chief Complaint (optional)"), 5, 5, default="")
         if notes is None:
-            print(yellow("\n  Registration cancelled."))
+            print(yellow(f"\n  {T('cancelled', 'Registration cancelled.')}"))
             return
 
         # Confirm
         confirmed = _confirm_box(name, phone, age, dept_name, notes)
         if not confirmed:
             print(yellow("  Going back to form..."))
-            continue   # re-show form
+            continue
 
         # Book
         print()
-        print(dim("  Booking ticket..."))
+        print(dim(f"  {T('booking_wait', 'Booking ticket...')}"))
         try:
             from ritmo.spinner import Spinner
-            with Spinner("Saving ticket..."):
+            with Spinner(T("booking_wait", "Saving ticket...")):
                 result = book_ticket({
                     "dept_id":      dept_id,
                     "patient_name": name,
@@ -378,13 +412,14 @@ def run_normal_mode():
         # Register another?
         print()
         try:
-            again = input(white("  Register another patient?  [Y/n]: ")).strip().lower()
+            q = T("another", "Register another patient?")
+            again = input(white(f"  {q}  [Y/n]: ")).strip().lower()
         except (KeyboardInterrupt, EOFError):
             again = "n"
 
         if again in ("n", "no", "0"):
             print()
-            print(dim("  Exiting Normal Mode."))
+            print(dim(f"  {T('goodbye', 'Thank you. Goodbye!')}"))
             print()
             return
 
