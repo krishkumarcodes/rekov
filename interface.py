@@ -3,9 +3,8 @@ interface.py - REKOV Interface Manager
 ========================================
 Central entry point. Ask the user how they want to run REKOV:
 
-  1  Web UI    - FastAPI backend (:4040) + Next.js frontend (:3000)
-  2  CLI       - FastAPI backend only (no browser)
-  3  RITMO CLI - AI assistant (HuggingFace or Offline mode)
+  1  CLI      - Terminal mode (Normal booking / RITMO AI / RITMO Voice)
+  2  Web UI   - Next.js frontend + FastAPI backend on port 3000
 
 Usage:
     python interface.py
@@ -32,11 +31,12 @@ except ImportError:
     def _print_rekov_credits(**_kw): pass
 
 # -- Paths --------------------------------------------------------------------
-ROOT_DIR    = os.path.dirname(os.path.abspath(__file__))
-BACKEND_DIR = os.path.join(ROOT_DIR, "rekov")
+ROOT_DIR     = os.path.dirname(os.path.abspath(__file__))
+BACKEND_DIR  = os.path.join(ROOT_DIR, "rekov")
 FRONTEND_DIR = os.path.join(ROOT_DIR, "rekoviu")
-BASE_DIR    = os.path.join(ROOT_DIR, "base")
-IS_WIN      = sys.platform == "win32"
+BASE_DIR     = os.path.join(ROOT_DIR, "base")
+CONN_DIR     = os.path.join(ROOT_DIR, "connection")
+IS_WIN       = sys.platform == "win32"
 
 # -- ANSI helpers -------------------------------------------------------------
 class _C:
@@ -65,9 +65,8 @@ def _print_banner():
     _print_rekov_credits(show_contributors=True, fetch_live=True)
     print(_dim("  Select how you want to interact with REKOV today."))
     print()
-    print("  " + _green("  1  ") + " ->  " + _white("Web UI         ") + _dim("(browser — FastAPI + Next.js)"))
-    print("  " + _C.TEAL + "  2  " + _C.RESET + " ->  " + _white("RITMO Terminal ") + _dim("(Normal / AI / Voice — no ports)"))
-    print("  " + _blue("  3  ") + " ->  " + _white("Backend Server ") + _dim("(FastAPI on :4040 — for advanced users)"))
+    print("  " + _green("  1  ") + " ->  " + _white("CLI            ") + _dim("(terminal — Normal booking / RITMO AI / Voice)"))
+    print("  " + _C.TEAL + "  2  " + _C.RESET + " ->  " + _white("Web UI         ") + _dim("(browser — Next.js + FastAPI on port 3000)"))
     print()
     print("  " + _dim("-" * 52))
     print()
@@ -95,7 +94,7 @@ def _load_env_from_config():
                 if key:
                     os.environ["SUPABASE_KEY"]            = key
                     os.environ["NEXT_PUBLIC_SUPABASE_KEY"] = key
-                os.environ.setdefault("NEXT_PUBLIC_API_URL", "http://localhost:4040/api/v1")
+                os.environ.setdefault("NEXT_PUBLIC_API_URL", "http://localhost:3000/api/v1")
                 hf = (
                     cfg.get("hf_token") or cfg.get("HF_TOKEN")
                     or os.environ.get("HF_TOKEN", "")
@@ -128,7 +127,7 @@ def _service_healthy(url: str) -> bool:
 
 
 def _kill_port(port: int):
-    """Kill whatever process is listening on the given port (Windows)."""
+    """Kill whatever process is listening on the given port."""
     if not IS_WIN:
         try:
             os.system(f"fuser -k {port}/tcp 2>/dev/null")
@@ -208,11 +207,132 @@ def _spawn(cmd, cwd: str, name: str):
 
 
 # =============================================================================
-#  MODE 1 - WEB UI
+#  MODE 1 - CLI (Normal / RITMO AI / Voice — all terminal, no ports)
+# =============================================================================
+
+def _print_cli_submenu():
+    os.system("cls" if IS_WIN else "clear")
+    try:
+        from rekov_credits import print_rekov_credits
+        print_rekov_credits(compact=True, show_contributors=False)
+    except Exception:
+        pass
+    print()
+    print("  " + _C.TEAL + "  REKOV CLI  —  Select Mode" + _C.RESET)
+    print("  " + _dim("-" * 52))
+    print()
+    print(f"  {_green('  1  ')} ->  {_white('Normal Mode')}    {_dim('guided form — name, phone, dept, receipt')}")
+    print()
+    print(f"  {_cyan('  2  ')} ->  {_white('RITMO AI Mode')}  {_dim('AI chat — HuggingFace (online) or Offline ONNX')}")
+    print()
+    print(f"  {_C.TEAL}  3  {_C.RESET} ->  {_white('Voice Mode')}    {_dim('always listening — fully voice operated (STT+TTS)')}")
+    print()
+    print(f"  {_dim('  0  ')} ->  {_white('Back')}           {_dim('return to main menu')}")
+    print()
+    print("  " + _dim("-" * 52))
+    print()
+
+
+def _pick_cli_mode() -> str:
+    while True:
+        try:
+            choice = input(_white("  Enter choice [1/2/3/0]: ")).strip()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            return "0"
+        if choice in ("1", "2", "3", "0"):
+            return choice
+        print(_red(f"  Invalid choice '{choice}'. Enter 1, 2, 3, or 0 to go back."))
+
+
+def launch_cli():
+    """CLI mode — Normal booking / RITMO AI / Voice. No ports. Pure terminal."""
+    while True:
+        _print_cli_submenu()
+        mode = _pick_cli_mode()
+
+        if mode == "0":
+            return  # back to main menu
+
+        elif mode == "1":
+            # Normal guided form mode
+            try:
+                sys.path.insert(0, ROOT_DIR)
+                from ritmo.normal_mode import run_normal_mode
+                run_normal_mode()
+            except ImportError as e:
+                print(_red(f"  [ERR] Could not load Normal Mode: {e}"))
+            except KeyboardInterrupt:
+                pass
+            # After returning from normal mode, loop back to CLI submenu
+
+        elif mode == "2":
+            # RITMO AI CLI (HF or Offline ONNX)
+            ritmocli_path = os.path.join(ROOT_DIR, "ritmo", "ritmocli.py")
+            if not os.path.isfile(ritmocli_path):
+                print(_red("  [ERR] ritmo/ritmocli.py not found."))
+                input(_dim("  Press Enter to go back..."))
+                continue
+            try:
+                subprocess.run([sys.executable, ritmocli_path], cwd=ROOT_DIR)
+            except KeyboardInterrupt:
+                pass
+
+        elif mode == "3":
+            # Voice Mode
+            try:
+                sys.path.insert(0, ROOT_DIR)
+                from ritmo.voice import pick_stt_engine, run_voice_loop
+
+                stt = pick_stt_engine()
+
+                try:
+                    from ritmo.pull import RitmoPull
+                    _load_env_from_config()
+                    cfg_path = os.path.join(ROOT_DIR, "config.json")
+                    cfg = {}
+                    if os.path.isfile(cfg_path):
+                        with open(cfg_path) as f:
+                            cfg = json.load(f)
+                    hf_token = (cfg.get("hf_token") or cfg.get("HF_TOKEN")
+                                or os.environ.get("HF_TOKEN", ""))
+                    rp = RitmoPull(hf_token=hf_token)
+
+                    def _ai_reply(text):
+                        reply, ms, source, action, action_data = rp.send(text)
+                        return reply, action, action_data
+
+                    print(_cyan("  [VOICE] Using HuggingFace AI backend."))
+                except Exception as hf_err:
+                    print(_yellow(f"  [VOICE] HF not available ({hf_err}) — using echo mode."))
+                    def _ai_reply(text):
+                        return f"You said: {text}", None, {}
+
+                run_voice_loop(_ai_reply, stt_engine=stt)
+
+            except ImportError as e:
+                print(_red(f"  [ERR] Voice mode requires additional packages: {e}"))
+                print(_yellow("  Run: pip install SpeechRecognition sounddevice edge-tts pygame"))
+                input(_dim("  Press Enter to go back..."))
+            except KeyboardInterrupt:
+                pass
+
+        # After any mode completes, ask to go back or stay
+        print()
+        try:
+            again = input(_white("  Back to CLI menu?  [Y/n]: ")).strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            return
+        if again in ("n", "no"):
+            return
+
+
+# =============================================================================
+#  MODE 2 - WEB UI (Next.js + FastAPI unified on port 3000)
 # =============================================================================
 def launch_webui():
     print()
-    print(_green("  [REKOV]  Mode 1 - Web UI"))
+    print(_green("  [REKOV]  Mode 2 - Web UI"))
     print()
 
     _load_env_from_config()
@@ -221,7 +341,7 @@ def launch_webui():
     try:
         r = subprocess.run(
             [sys.executable, "-c",
-             "import fastapi, uvicorn, pydantic, supabase, requests, edge_tts, fpdf"],
+             "import fastapi, uvicorn, pydantic, supabase, requests"],
             capture_output=True, text=True, timeout=15,
         )
         if r.returncode != 0:
@@ -257,298 +377,93 @@ def launch_webui():
         except Exception as e:
             print(_yellow(f"  [WRN] Could not clear .next cache: {e}"))
 
-    # Kill stale ports
-    for port in (3000, 4040):
-        if _port_in_use(port):
-            print(_yellow(f"  [WRN] Port {port} occupied - clearing..."))
-            _kill_port(port)
-            time.sleep(1)
+    # Kill stale port 3000
+    if _port_in_use(3000):
+        print(_yellow("  [WRN] Port 3000 occupied - clearing..."))
+        _kill_port(3000)
+        time.sleep(1)
 
-    # Build launch commands
-    backend_cmd = [
-        sys.executable, "-m", "uvicorn", "main:app",
-        "--host", "0.0.0.0", "--port", "4040", "--reload",
-    ]
-    _node  = shutil.which("node") or "node"
-    _next  = os.path.join(FRONTEND_DIR, "node_modules", "next", "dist", "bin", "next")
-    _npm   = shutil.which("npm.cmd") or shutil.which("npm") or "npm.cmd"
-    frontend_cmd = (
-        [_node, _next, "dev", "-p", "3000"]
-        if os.path.isfile(_next)
-        else [_npm, "run", "dev"]
-    )
+    # Launch connection server (unified on :3000) if it exists,
+    # otherwise fall back to launching frontend + backend separately
+    conn_server = os.path.join(CONN_DIR, "server.py")
+    if os.path.isfile(conn_server):
+        print(_green("  [OK]  Using unified connection server (port 3000)."))
+        backend_cmd = [sys.executable, conn_server]
+        api_proc = _spawn(backend_cmd, CONN_DIR, "SERVER")
+        ui_proc  = None
+    else:
+        # Legacy: frontend on :3000, FastAPI on :3000/api via proxy
+        if _port_in_use(4040):
+            _kill_port(4040)
+            time.sleep(0.5)
 
-    # Launch
-    api_proc = _spawn(backend_cmd,  BACKEND_DIR,  "API")
-    ui_proc  = _spawn(frontend_cmd, FRONTEND_DIR, "UI")
+        backend_cmd = [
+            sys.executable, "-m", "uvicorn", "main:app",
+            "--host", "0.0.0.0", "--port", "4040", "--reload",
+        ]
+        _node  = shutil.which("node") or "node"
+        _next  = os.path.join(FRONTEND_DIR, "node_modules", "next", "dist", "bin", "next")
+        _npm   = shutil.which("npm.cmd") or shutil.which("npm") or "npm.cmd"
+        frontend_cmd = (
+            [_node, _next, "dev", "-p", "3000"]
+            if os.path.isfile(_next)
+            else [_npm, "run", "dev"]
+        )
+        api_proc = _spawn(backend_cmd, BACKEND_DIR, "API")
+        ui_proc  = _spawn(frontend_cmd, FRONTEND_DIR, "UI")
 
     print()
     print(_green("  ALL SYSTEMS LAUNCHING"))
     print()
     print(_cyan("    http://localhost:3000          (App)"))
     print(_cyan("    http://localhost:3000/kiosk    (Kiosk)"))
-    print(_cyan("    http://localhost:4040/docs     (API Docs)"))
+    print(_cyan("    http://localhost:3000/api/v1   (API)"))
     print()
     print(_dim("  GREEN = ready   RED = error   Ctrl+C to stop"))
     print()
 
     # Keep-alive loop
-    ui_orphaned = False
     try:
         while True:
-            # Backend watchdog
             if api_proc and api_proc.poll() is not None:
                 if api_proc.returncode != 0:
-                    print(_red("  [ERR] [API] Crashed - restarting in 3s..."))
+                    print(_red("  [ERR] Server crashed - restarting in 3s..."))
                     time.sleep(3)
-                    _kill_port(4040)
-                    time.sleep(1)
-                    api_proc = _spawn(backend_cmd, BACKEND_DIR, "API")
+                    if conn_server and os.path.isfile(conn_server):
+                        api_proc = _spawn(backend_cmd, CONN_DIR, "SERVER")
+                    else:
+                        _kill_port(4040)
+                        time.sleep(1)
+                        api_proc = _spawn(backend_cmd, BACKEND_DIR, "API")
 
-            # Frontend watchdog
             if ui_proc and ui_proc.poll() is not None:
                 code = ui_proc.returncode
                 ui_proc = None
-                if _service_healthy("http://127.0.0.1:3000/"):
-                    ui_orphaned = True
-                else:
+                if not _service_healthy("http://127.0.0.1:3000/"):
                     print(_red(f"  [ERR] [UI] Exited (code {code}) - restarting..."))
                     time.sleep(3)
                     _kill_port(3000)
                     time.sleep(1)
                     ui_proc = _spawn(frontend_cmd, FRONTEND_DIR, "UI")
-            elif ui_orphaned and not _service_healthy("http://127.0.0.1:3000/"):
-                print(_yellow("  [WRN] [UI] Next.js went down - restarting..."))
-                _kill_port(3000)
-                time.sleep(2)
-                ui_orphaned = False
-                ui_proc = _spawn(frontend_cmd, FRONTEND_DIR, "UI")
 
             time.sleep(3)
     except KeyboardInterrupt:
         print()
         print(_yellow("  [WRN] Shutting down all services..."))
     finally:
-        for proc in [api_proc, ui_proc]:
+        procs = [api_proc]
+        if ui_proc:
+            procs.append(ui_proc)
+        for proc in procs:
             if proc and proc.poll() is None:
-                subprocess.run(
-                    ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                )
-        print(_green("  [OK]  Shutdown complete."))
-
-
-# =============================================================================
-#  MODE 2 - CLI
-# =============================================================================
-def launch_cli():
-    print()
-    print(_blue("  [REKOV]  Mode 2 - CLI"))
-    print()
-    print(_dim("  Starting REKOV in terminal mode (FastAPI backend only)."))
-    print(_dim("  No browser or Next.js frontend will be launched."))
-    print()
-
-    _load_env_from_config()
-
-    # Install backend deps
-    try:
-        r = subprocess.run(
-            [sys.executable, "-c",
-             "import fastapi, uvicorn, pydantic, supabase, requests, edge_tts, fpdf"],
-            capture_output=True, text=True, timeout=15,
-        )
-        if r.returncode != 0:
-            raise RuntimeError("missing deps")
-        print(_green("  [OK]  Backend dependencies ready."))
-    except Exception:
-        print(_yellow("  [UPD] Installing backend dependencies..."))
-        req = os.path.join(BACKEND_DIR, "requirements.txt")
-        if not os.path.exists(req):
-            req = os.path.join(ROOT_DIR, "requirements.txt")
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-r", req, "--quiet"],
-            cwd=BACKEND_DIR, check=True,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-        print(_green("  [OK]  Backend dependencies installed."))
-
-    if _port_in_use(4040):
-        print(_yellow("  [WRN] Port 4040 occupied - clearing..."))
-        _kill_port(4040)
-        time.sleep(1)
-
-    backend_cmd = [
-        sys.executable, "-m", "uvicorn", "main:app",
-        "--host", "0.0.0.0", "--port", "4040", "--reload",
-    ]
-    api_proc = _spawn(backend_cmd, BACKEND_DIR, "API")
-
-    print()
-    print(_blue("  REKOV CLI - API RUNNING"))
-    print()
-    print(_cyan("    http://localhost:4040/docs     (API Docs / Swagger)"))
-    print(_cyan("    http://localhost:4040/api/v1   (REST API base)"))
-    print()
-
-    # Interactive CLI loop
-    print(_dim("  CLI Commands:"))
-    print(_dim("    status   - check service health"))
-    print(_dim("    restart  - restart the API server"))
-    print(_dim("    quit     - stop and exit"))
-    print()
-
-    try:
-        while True:
-            try:
-                cmd = input(_white("  rekov> ")).strip().lower()
-            except EOFError:
-                break
-
-            if cmd in ("quit", "exit", "q"):
-                break
-            elif cmd == "status":
-                alive = (
-                    _service_healthy("http://127.0.0.1:4040/api/v1/health")
-                    or _service_healthy("http://127.0.0.1:4040/")
-                )
-                proc_alive = api_proc and api_proc.poll() is None
-                print(_green("  API  :4040  ONLINE") if alive else _red("  API  :4040  OFFLINE / STARTING"))
-                print(_green("  Process  ALIVE") if proc_alive else _red("  Process  DEAD"))
-            elif cmd == "restart":
-                print(_yellow("  [WRN] Restarting API..."))
-                if api_proc and api_proc.poll() is None:
+                try:
                     subprocess.run(
-                        ["taskkill", "/F", "/T", "/PID", str(api_proc.pid)],
+                        ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                     )
-                time.sleep(1)
-                _kill_port(4040)
-                time.sleep(1)
-                api_proc = _spawn(backend_cmd, BACKEND_DIR, "API")
-                print(_green("  [OK]  API restarted."))
-            elif cmd == "help":
-                print(_dim("  status / restart / quit"))
-            elif cmd == "":
-                pass
-            else:
-                print(_yellow(f"  Unknown command: '{cmd}'  (type 'help')"))
-
-    except KeyboardInterrupt:
-        print()
-    finally:
-        print(_yellow("  [WRN] Shutting down..."))
-        if api_proc and api_proc.poll() is None:
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(api_proc.pid)],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
+                except Exception:
+                    proc.terminate()
         print(_green("  [OK]  Shutdown complete."))
-
-
-# =============================================================================
-#  RITMO SUB-MENU (Mode 3)
-# =============================================================================
-
-def _print_ritmo_submenu():
-    os.system("cls" if IS_WIN else "clear")
-    try:
-        from rekov_credits import print_rekov_credits
-        print_rekov_credits(compact=True, show_contributors=False)
-    except Exception:
-        pass
-    print()
-    print("  " + "\x1b[38;5;43m" + "  ╔══════════════════════════════════════════════════════╗" + "\x1b[0m")
-    print("  " + "\x1b[38;5;43m" + "  ║" + "\x1b[0m" + _white("   RITMO  —  Select Mode                              ") + "\x1b[38;5;43m" + "║" + "\x1b[0m")
-    print("  " + "\x1b[38;5;43m" + "  ╚══════════════════════════════════════════════════════╝" + "\x1b[0m")
-    print()
-    print(f"  {_green('  1  ')} ->  {_white('Normal Mode')}    {_dim('guided form — name, dept, receipt (no AI)')}")
-    print()
-    print(f"  {_cyan('  2  ')} ->  {_white('RITMO AI Mode')}  {_dim('conversational AI — HuggingFace or Offline ONNX')}")
-    print()
-    print(f"  {'\x1b[35;1m  3  \x1b[0m'} ->  {_white('Voice Mode')}    {_dim('always listening — fully voice operated (STT+TTS)')}")
-    print()
-    print("  " + _dim("-" * 52))
-    print()
-
-
-def _pick_ritmo_mode() -> str:
-    while True:
-        try:
-            choice = input(_white("  Enter choice [1/2/3]: ")).strip()
-        except (KeyboardInterrupt, EOFError):
-            print(); sys.exit(0)
-        if choice in ("1", "2", "3"):
-            return choice
-        print(_red(f"  Invalid choice '{choice}'. Please enter 1, 2, or 3."))
-
-
-def launch_ritmocli():
-    """Show RITMO sub-menu and launch the chosen mode."""
-    _print_ritmo_submenu()
-    mode = _pick_ritmo_mode()
-
-    if mode == "1":
-        # Normal guided form mode
-        try:
-            sys.path.insert(0, ROOT_DIR)
-            from ritmo.normal_mode import run_normal_mode
-            run_normal_mode()
-        except ImportError as e:
-            print(_red(f"  [ERR] Could not load Normal Mode: {e}"))
-        except KeyboardInterrupt:
-            pass
-
-    elif mode == "2":
-        # Existing RITMO AI CLI (HF or Offline ONNX)
-        ritmocli_path = os.path.join(ROOT_DIR, "ritmo", "ritmocli.py")
-        if not os.path.isfile(ritmocli_path):
-            print(_red("  [ERR] ritmo/ritmocli.py not found."))
-            return
-        try:
-            subprocess.run([sys.executable, ritmocli_path], cwd=ROOT_DIR)
-        except KeyboardInterrupt:
-            pass
-
-    elif mode == "3":
-        # Voice Mode
-        try:
-            sys.path.insert(0, ROOT_DIR)
-            from ritmo.voice import pick_stt_engine, run_voice_loop
-
-            # Try to wire up the HF AI backend for voice mode
-            stt = pick_stt_engine()
-
-            try:
-                from ritmo.pull import RitmoPull
-                _load_env_from_config()
-                cfg_path = os.path.join(ROOT_DIR, "config.json")
-                cfg = {}
-                if os.path.isfile(cfg_path):
-                    import json
-                    with open(cfg_path) as f:
-                        cfg = json.load(f)
-                hf_token = (cfg.get("hf_token") or cfg.get("HF_TOKEN")
-                            or os.environ.get("HF_TOKEN", ""))
-                rp = RitmoPull(hf_token=hf_token)
-
-                def _ai_reply(text):
-                    reply, ms, source, action, action_data = rp.send(text)
-                    return reply, action, action_data
-
-                print(_cyan("  [VOICE] Using HuggingFace AI backend."))
-            except Exception as hf_err:
-                print(_yellow(f"  [VOICE] HF not available ({hf_err}) — using echo mode."))
-                def _ai_reply(text):
-                    return f"You said: {text}", None, {}
-
-            run_voice_loop(_ai_reply, stt_engine=stt)
-
-        except ImportError as e:
-            print(_red(f"  [ERR] Voice mode requires additional packages: {e}"))
-            print(_yellow("  Run: pip install SpeechRecognition sounddevice edge-tts pygame"))
-        except KeyboardInterrupt:
-            pass
 
 
 # =============================================================================
@@ -559,23 +474,21 @@ def main():
 
     while True:
         try:
-            choice = input(_white("  Enter choice [1/2/3]: ")).strip()
+            choice = input(_white("  Enter choice [1/2]: ")).strip()
         except (KeyboardInterrupt, EOFError):
             print()
             print(_yellow("  Cancelled."))
             sys.exit(0)
 
         if choice == "1":
+            launch_cli()
+            # After returning from CLI, re-show main menu
+            _print_banner()
+        elif choice == "2":
             launch_webui()
             break
-        elif choice == "2":
-            launch_ritmocli()
-            break
-        elif choice == "3":
-            launch_cli()
-            break
         else:
-            print(_red(f"  Invalid choice '{choice}'. Please enter 1, 2, or 3."))
+            print(_red(f"  Invalid choice '{choice}'. Please enter 1 or 2."))
             print()
 
 
