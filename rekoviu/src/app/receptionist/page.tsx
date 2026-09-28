@@ -85,15 +85,6 @@ export default function ReceptionistPage() {
       console.error('Failed to load sync status:', e);
     }
   };
-    try {
-      const data = await fetchSyncStatus();
-      if (data) {
-        setSyncStatus(data);
-      }
-    } catch (e) {
-      console.error('Failed to load sync status:', e);
-    }
-  };
 
   const handleManualSync = async () => {
     setIsSyncing(true);

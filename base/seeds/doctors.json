@@ -1,0 +1,23 @@
+[
+  {
+    "_comment": "Default doctor seed data — seeded by base/database.py init_db()",
+    "doctor_id": "doc_1",
+    "username": "dr.vance",
+    "default_password": "rekov123"
+  },
+  {
+    "doctor_id": "doc_2",
+    "username": "dr.rostova",
+    "default_password": "rekov123"
+  },
+  {
+    "doctor_id": "doc_3",
+    "username": "dr.thorne",
+    "default_password": "rekov123"
+  },
+  {
+    "doctor_id": "doc_4",
+    "username": "dr.jenkins",
+    "default_password": "rekov123"
+  }
+]

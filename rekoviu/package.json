@@ -1,6 +1,6 @@
 {
   "name": "rekoviu",
-  "version": "6.8.0",
+  "version": "7.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",

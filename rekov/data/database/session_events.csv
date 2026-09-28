@@ -448,3 +448,10 @@ ts,session_id,event_type,page,element,value,extra
 2026-09-22T21:26:15Z,eac8153a-4bcb-452a-b9d3-49f679f3034e,navigate,/kiosk,step-1-next,,"{""from_step"": 1, ""to_step"": 2}"
 2026-09-22T21:26:17Z,eac8153a-4bcb-452a-b9d3-49f679f3034e,navigate,/kiosk,step-2-next,,"{""from_step"": 2, ""to_step"": 3}"
 2026-09-22T21:26:20Z,eac8153a-4bcb-452a-b9d3-49f679f3034e,navigate,/kiosk,step-3-next,,"{""from_step"": 3, ""to_step"": 4}"
+2026-09-22T22:09:00Z,0c7a6bfe-7f8e-4b94-8480-c20cf50ef619,input,/kiosk,patient-name,T,
+2026-09-22T22:09:03Z,0c7a6bfe-7f8e-4b94-8480-c20cf50ef619,input,/kiosk,patient-name,TO,
+2026-09-22T22:09:10Z,0c7a6bfe-7f8e-4b94-8480-c20cf50ef619,input,/kiosk,patient-phone,***,
+2026-09-22T22:09:13Z,0c7a6bfe-7f8e-4b94-8480-c20cf50ef619,input,/kiosk,patient-phone,***,
+2026-09-22T22:09:15Z,0c7a6bfe-7f8e-4b94-8480-c20cf50ef619,input,/kiosk,patient-phone,***,
+2026-09-22T22:09:17Z,0c7a6bfe-7f8e-4b94-8480-c20cf50ef619,input,/kiosk,patient-phone,***,
+2026-09-22T22:09:25Z,0c7a6bfe-7f8e-4b94-8480-c20cf50ef619,navigate,/kiosk,step-1-next,,"{""from_step"": 1, ""to_step"": 2}"

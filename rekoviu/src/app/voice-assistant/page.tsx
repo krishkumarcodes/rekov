@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { MediVERSENav } from '@/components/common/MediVERSENav';
 import { useVoiceCall } from '@/contexts/VoiceCallContext';
@@ -26,7 +26,7 @@ function SpeakerIcon({ size = 20 }: { size?: number }) {
   );
 }
 
-export default function VoiceAssistantPage() {
+function VoiceAssistantContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const {
@@ -362,5 +362,13 @@ export default function VoiceAssistantPage() {
 
       </div>
     </>
+  );
+}
+
+export default function VoiceAssistantPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 40, color: 'white', textAlign: 'center' }}>Loading Voice Assistant...</div>}>
+      <VoiceAssistantContent />
+    </Suspense>
   );
 }

@@ -2,5 +2,9 @@
   "hash_patients.csv": "35a3f9aab9f5ff413a3a7bc1259de84e",
   "hash_departments.csv": "858287e914c2175c0fff9528d9b87716",
   "hash_doctors.csv": "dc29f5566fdf275fd32967a62764d748",
-  "hash_schedules.csv": "04eb86b43d4356a48d7a11eaa71faa43"
+  "hash_schedules.csv": "04eb86b43d4356a48d7a11eaa71faa43",
+  "offline_hash_doctors.csv": "dc29f5566fdf275fd32967a62764d748",
+  "offline_hash_departments.csv": "858287e914c2175c0fff9528d9b87716",
+  "offline_hash_patients.csv": "35a3f9aab9f5ff413a3a7bc1259de84e",
+  "offline_hash_schedules.csv": "04eb86b43d4356a48d7a11eaa71faa43"
 }

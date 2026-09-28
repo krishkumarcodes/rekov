@@ -59,3 +59,19 @@ backup/
 # TypeScript
 *.tsbuildinfo
 
+# ONNX model cache (large — auto-downloaded)
+base/models/Qwen*
+base/models/*.onnx
+
+# Generated receipts
+data/receipts/
+
+# Backup / scratch files
+_interface_orig.py
+
+# Practice problems (not part of REKOV)
+leetcode_hard_50/
+
+# Test data
+data/test_receipt.pdf
+
