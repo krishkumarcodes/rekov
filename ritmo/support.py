@@ -388,7 +388,7 @@ def _print_report(report: dict):
     _status_line("Python Deps", r["ok"], r["message"])
     for pkg, status in r.get("details", {}).items():
         installed = "NOT INSTALLED" not in status
-        icon = green("✓") if installed else red("✗")
+        icon = green("[OK]") if installed else red("[X] ")
         print(f"          {icon}  {pkg:<15} {dim(status)}")
 
     # Models
@@ -499,12 +499,12 @@ def print_inline_status():
     """Print a compact one-line status bar for ritmocli.py header."""
     s = inline_status()
 
-    hf_icon  = green("HF ✓")      if s["hf_ready"]      else red("HF ✗")
-    off_icon = green(f"Offline ✓ ({s['offline_model_count']} model)") \
-               if s["offline_ready"]  else yellow("Offline ✗")
+    hf_icon  = green("HF [OK]")      if s["hf_ready"]      else red("HF [X]")
+    off_icon = green(f"Offline [OK] ({s['offline_model_count']} model)") \
+               if s["offline_ready"]  else yellow("Offline [X]")
 
     parts = [hf_icon, off_icon]
-    print(f"  {dim('Status:')}  {'  │  '.join(parts)}")
+    print(f"  {dim('Status:')}  {'  |  '.join(parts)}")
 
     # Show hints for what's broken
     hints = []

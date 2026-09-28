@@ -206,7 +206,7 @@ def read_stream(stream, name: str, is_stderr: bool = False):
         if not line.strip():
             continue
         # Strip emojis requested by user
-        line = line.replace("✓", "[OK]").replace("▲", "*").replace("🚨", "[!]").replace("✨", "*")
+        line = line.replace("✓", "[OK]").replace("▲", "*").replace("🚨", "[!]").replace("✨", "*").replace("▸", "->").replace("⚠", "[!]").replace("☁", "[CLOUD]").replace("✗", "[X]").replace("★", "*").replace("│", "|").replace("┌", "+").replace("└", "+").replace("─", "-").replace("┐", "+").replace("┘", "+")
         _classify_and_log(line, name)
     stream.close()
 

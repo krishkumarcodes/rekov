@@ -205,18 +205,16 @@ def ascii_qr(data_url: str, width: int = 35) -> list[str]:
 
 
 def print_ascii_qr(data_url: str, label: str = "Scan QR"):
-    """Print QR code as ASCII art with a border and label."""
+    """Print QR code as ASCII art with a plain border and label."""
     lines = ascii_qr(data_url)
     if not lines:
         return
-    
     w = len(lines[0]) + 4
-    border = "─" * w
-    print(f"  ┌{border}┐")
+    print("  +" + "-" * w + "+")
     for ln in lines:
-        print(f"  │  {ln}  │")
-    print(f"  └{border}┘")
-    print(f"  {'  ' + label:^{w + 2}}")
+        print("  |  " + ln + "  |")
+    print("  +" + "-" * w + "+")
+    print(f"  {('  ' + label):^{w + 2}}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -280,7 +278,7 @@ def book_ticket(action_data: dict) -> dict:
     if sb["ok"]:
         result["ok"] = True
         result["supabase_synced"] = True
-        result["message"] = f"Ticket {token} booked → Supabase ☁"
+        result["message"] = f"Ticket {token} booked -> Supabase [CLOUD]"
     else:
         # Fallback to local SQLite
         try:

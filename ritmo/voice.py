@@ -269,7 +269,7 @@ class _ManualSTT:
 
     def listen(self, timeout=60, phrase_limit=None) -> str:
         try:
-            text = input(cyan("  You  ▸  ")).strip()
+            text = input(cyan("  You  ->  ")).strip()
         except EOFError:
             text = "quit"
         if not text:
@@ -337,7 +337,7 @@ def _collect_field_voice(prompt: str, stt, fallback: str = "") -> str:
     for attempt in range(3):
         try:
             text = stt.listen(timeout=8)
-            print(f"  You  ▸  {white(text)}")
+            print(f"  You  ->  {white(text)}")
             return text
         except Exception:
             if attempt < 2:
@@ -507,7 +507,7 @@ def run_voice_loop(ai_reply_fn, stt_engine=None):
                 msg = f"Done! Your token number is {token} for {dept}."
                 if synced:
                     msg += " Ticket stored in Supabase."
-                print(green(f"  [BOOKED] Token: {token} | Dept: {dept} | {'☁ Supabase' if synced else '⚠ Local only'}"))
+                print(green(f"  [BOOKED] Token: {token} | Dept: {dept} | {'[CLOUD] Supabase' if synced else '[!] Local only'}"))
                 speak(msg)
                 _last_ticket = result
 

@@ -169,7 +169,7 @@ def print_rekov_credits(
         # pheonix14 always gets bold + star treatment
         if login == "pheonix14":
             print(
-                f"  {_t(_A.YELLOW, '★')} "
+                f"  {_t(_A.YELLOW, '*')} "
                 f"{_t(_A.WHITE + _A.BOLD, login)}"
                 f"{contrib_str}"
                 f"{role_str}"

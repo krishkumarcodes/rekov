@@ -180,29 +180,29 @@ def _banner(mode_label: str, mode_color):
     print()
 
 def _print_ritmo(text: str):
-    prefix = teal("  RITMO ▸  ")
+    prefix = teal("  RITMO ->  ")
     lines  = textwrap.wrap(text, 65)
     print()
     for i, line in enumerate(lines):
-        print((prefix if i == 0 else " " * 11) + white(line))
+        print((prefix if i == 0 else " " * 12) + white(line))
     print()
 
 def _print_action(action: str, data: dict):
     print()
     if action == "BOOK_TICKET":
-        print(green("  ┌─ ACTION: BOOKING TICKET ──────────────────────────────┐"))
+        print(green("  +-- ACTION: BOOKING TICKET -------------------------------------------------+"))
         for k, v in data.items():
-            print(green(f"  │  {k:<20} {v}"))
-        print(green("  └───────────────────────────────────────────────────────┘"))
+            print(green(f"  |  {k:<20} {str(v)}"))
+        print(green("  +--------------------------------------------------------------------------+"))
     elif action == "GENERATE_RECEIPT":
-        print(magenta("  ┌─ ACTION: GENERATING RECEIPT ──────────────────────────┐"))
+        print(magenta("  +-- ACTION: GENERATING RECEIPT ---------------------------------------------+"))
         for k, v in data.items():
-            print(magenta(f"  │  {k:<20} {v}"))
-        print(magenta("  └───────────────────────────────────────────────────────┘"))
+            print(magenta(f"  |  {k:<20} {str(v)}"))
+        print(magenta("  +--------------------------------------------------------------------------+"))
     elif action == "EMERGENCY":
-        print(red("  ┌─ !!! EMERGENCY TRIAGE !!!  ──────────────────────────┐"))
-        print(red("  │  Routing to Emergency immediately — PRIORITY MAX     │"))
-        print(red("  └──────────────────────────────────────────────────────┘"))
+        print(red("  +-- !!! EMERGENCY TRIAGE !!!  ---------------------------------------------+"))
+        print(red("  |  Routing to Emergency immediately -- PRIORITY MAX                       |"))
+        print(red("  +--------------------------------------------------------------------------+"))
     print()
 
 # ── Shared Ticket Booking + Receipt Flow ──────────────────────────────────────
@@ -233,25 +233,25 @@ def _do_booking(action_data: dict, logger=None) -> dict:
 
     print()
     if result["ok"]:
-        print(green("  ┌─ TICKET BOOKED ──────────────────────────────────────┐"))
-        print(green(f"  │  Token       : {result['token']:<38}│"))
-        print(green(f"  │  Ticket ID   : {result['ticket_id']:<38}│"))
-        print(green(f"  │  Patient     : {result['patient']:<38}│"))
-        print(green(f"  │  Department  : {result['dept_name']:<38}│"))
-        print(green(f"  │  Fee         : ₹{result['fee']:<37.2f}│"))
-        print(green("  └─────────────────────────────────────────────────────┘"))
+        print(green("  +-- TICKET BOOKED ------------------------------------------------------+"))
+        print(green(f"  |  Token       : {result['token']:<52}|"))
+        print(green(f"  |  Ticket ID   : {result['ticket_id']:<52}|"))
+        print(green(f"  |  Patient     : {result['patient']:<52}|"))
+        print(green(f"  |  Department  : {result['dept_name']:<52}|"))
+        print(green(f"  |  Fee         : Rs.{result['fee']:<49.2f}|"))
+        print(green("  +----------------------------------------------------------------------+"))
         print()
 
         # Clear Supabase sync status
         if result["supabase_synced"]:
-            print(green("  ☁  Stored in Supabase  ✓") + dim("  (cloud — accessible anywhere)"))
+            print(green("  [CLOUD]  Stored in Supabase  [OK]") + dim("  (accessible from any device)"))
         else:
-            print(yellow("  ⚠  Stored locally only") + dim("  (Supabase unreachable — saved to SQLite)"))
+            print(yellow("  [!]     Stored locally only") + dim("  (Supabase unreachable -- saved to SQLite)"))
         print()
-        print(dim("  Type your next message, or say \"generate receipt\" to get a receipt."))
+        print(dim("  Type your next message, or say 'generate receipt' to get a receipt."))
         print()
     else:
-        print(red(f"  ✗ Booking failed: {result['message']}"))
+        print(red(f"  [FAIL] Booking failed: {result['message']}"))
         print()
 
     _last_ticket = result
@@ -287,34 +287,31 @@ def _do_receipt(ticket_data: dict = None, logger=None) -> dict:
         store_url = receipt.get("storage_url", "")
         html_path = receipt.get("html_path", "")
 
-        print(magenta("  ┌─ RECEIPT GENERATED ─────────────────────────────────────┐"))
-        print(magenta(f"  │  Ticket  : {tid:<43}│"))
-        print(magenta(f"  │  Token   : {token:<43}│"))
-        print(magenta(f"  │  Patient : {pname:<43}│"))
-        print(magenta("  └─────────────────────────────────────────────────────────┘"))
+        print(magenta("  +-- RECEIPT GENERATED -----------------------------------------------+"))
+        print(magenta(f"  |  Ticket  : {tid:<51}|"))
+        print(magenta(f"  |  Token   : {token:<51}|"))
+        print(magenta(f"  |  Patient : {pname:<51}|"))
+        print(magenta("  +-------------------------------------------------------------------+"))
         print()
 
         # Storage sync status
         if store_url:
-            print(green("  ☁  Uploaded to Supabase Storage ✓"))
+            print(green("  [CLOUD]  Uploaded to Supabase Storage  [OK]"))
             print(f"  {dim('Receipt URL  :')} {cyan(store_url)}")
         else:
-            print(yellow("  ⚠  Saved locally (Supabase Storage unreachable)"))
+            print(yellow("  [!]  Saved locally (Supabase Storage unreachable)"))
             print(f"  {dim('Local file   :')} {cyan(html_path)}")
         print()
 
-        # ASCII QR code in terminal
+        # ASCII QR code in terminal -- plain print, no extra file handles
         ascii_lines = receipt.get("ascii_qr_lines", [])
         if ascii_lines:
             w = len(ascii_lines[0]) + 4
-            border = "\u2500" * w
-            stdout = open(sys.stdout.fileno(), mode="w", encoding="utf-8", buffering=1, closefd=False)
-            stdout.write(f"  \u250c{border}\u2510\n")
+            print("  +" + "-" * w + "+")
             for ln in ascii_lines:
-                stdout.write(f"  \u2502  {ln}  \u2502\n")
-            stdout.write(f"  \u2514{border}\u2518\n")
-            stdout.flush()
-            print(dim(f"  {'Scan QR to open receipt from any device':^{w + 2}}"))
+                print("  |  " + ln + "  |")
+            print("  +" + "-" * w + "+")
+            print(dim("  Scan QR to open receipt from any device."))
             print()
 
         # Public URL hint
@@ -336,7 +333,7 @@ def _do_receipt(ticket_data: dict = None, logger=None) -> dict:
             print(dim(f"  Open manually: {html_path}"))
         print()
     else:
-        print(red(f"  ✗ Receipt generation failed: {receipt.get('message', '?')}"))
+        print(red(f"  [FAIL] Receipt generation failed: {receipt.get('message', '?')}"))
         print()
 
     if logger:
@@ -350,7 +347,7 @@ def _do_receipt(ticket_data: dict = None, logger=None) -> dict:
 
 def _user_prompt() -> str:
     try:
-        return input(cyan("  You   ▸  ")).strip()
+        return input(cyan("  You   ->  ")).strip()
     except (KeyboardInterrupt, EOFError):
         return "/quit"
 
@@ -416,7 +413,7 @@ def _handle_common_cmd(cmd: str, history: list, mode_fn, logger=None) -> bool:
             for turn in history:
                 role  = "You  " if turn["role"] == "user" else "RITMO"
                 color = cyan if turn["role"] == "user" else teal
-                print(f"  {color(role)} ▸  {turn['content']}")
+                print(f"  {color(role)} ->  {turn['content']}")
         print()
         return True
 
@@ -704,7 +701,7 @@ def run_offline_mode():
         session_id = str(uuid.uuid4())
         
     sb_ok, sb_detail = _check_supabase_alive()
-    sb_icon = green("☁ CLOUD SYNC ON") if sb_ok else red("⚠ CLOUD SYNC OFF")
+    sb_icon = green("[CLOUD] SYNC ON") if sb_ok else red("[!] CLOUD SYNC OFF")
     print(f"  Session : {cyan(session_id[:8])}")
     print(f"  Storage : {sb_icon}  {dim('(' + sb_detail + ')')}")
     if sb_ok:
